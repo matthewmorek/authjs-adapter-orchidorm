@@ -3,9 +3,9 @@ import type { OrchidORM } from "orchid-orm";
 
 export function OrchidAdapter(db: OrchidORM): Adapter {
   return {
-    async createUser(payload) {
-      const user = await db.user.create(payload);
-      return user as unknown as AdapterUser;
+    async createUser(user) {
+      const createdUser = await db.user.create(user);
+      return createdUser as unknown as AdapterUser;
     },
     async getUser(id) {
       const user = await db.user.findBy({ id });
