@@ -1,4 +1,4 @@
-import type { Adapter, AdapterUser } from "next-auth/adapters";
+import type { Adapter, AdapterAccount, AdapterUser } from "next-auth/adapters";
 import type { OrchidORM } from "orchid-orm";
 
 export function OrchidAdapter(db: OrchidORM): Adapter {
@@ -20,6 +20,22 @@ export function OrchidAdapter(db: OrchidORM): Adapter {
         account: (q) => q.account.join().where({ provider, providerAccountId }),
       });
       return user as unknown as AdapterUser;
+    },
+    async updateUser(user) {
+      const updatedUser = await db.user.findBy({ id: user.id }).update(user).take();
+      return updatedUser as unknown as AdapterUser;
+    },
+    async deleteUser(userId) {
+      await db.session.findBy({ userId: userId }).delete();
+      await db.account.findBy({ userId: userId }).delete();
+      await db.account.findBy({ id: userId }).delete();
+    },
+    async linkAccount(account) {
+      const createdAccount = await db.account.create(account);
+      return createdAccount as unknown as AdapterAccount;
+    },
+    async unlinkAccount({ provider, providerAccountId }) {
+      await db.account.findBy({ provider, providerAccountId }).delete();
     },
   };
 }
