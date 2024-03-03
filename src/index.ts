@@ -1,4 +1,10 @@
-import type { Adapter, AdapterAccount, AdapterUser } from "next-auth/adapters";
+import type {
+  Adapter,
+  AdapterAccount,
+  AdapterSession,
+  AdapterUser,
+  VerificationToken,
+} from "next-auth/adapters";
 import type { OrchidORM } from "orchid-orm";
 
 export function OrchidAdapter(db: OrchidORM): Adapter {
@@ -36,6 +42,33 @@ export function OrchidAdapter(db: OrchidORM): Adapter {
     },
     async unlinkAccount({ provider, providerAccountId }) {
       await db.account.findBy({ provider, providerAccountId }).delete();
+    },
+    async createSession(session) {
+      const createdSession = await db.session.create(session);
+      return createdSession as unknown as AdapterSession;
+    },
+    async getSessionAndUser(sessionToken) {
+      const session = await db.session.findBy({ sessionToken });
+      const user = await db.user.findBy({ id: session.userId });
+      return { session, user } as unknown as { session: AdapterSession; user: AdapterUser };
+    },
+    async updateSession(session) {
+      const updatedSession = await db.session
+        .findBy({ sessionToken: session.sessionToken })
+        .update(session)
+        .take();
+      return updatedSession as unknown as AdapterSession;
+    },
+    async deleteSession(sessionToken) {
+      await db.session.findBy({ sessionToken }).delete();
+    },
+    async createVerificationToken(verificationToken) {
+      const newVerificationToken = await db.verificationToken.create(verificationToken);
+      return newVerificationToken as unknown as VerificationToken;
+    },
+    async useVerificationToken({ identifier, token }) {
+      const verificationToken = await db.verificationToken.findBy({ identifier, token });
+      return verificationToken as unknown as VerificationToken;
     },
   };
 }
