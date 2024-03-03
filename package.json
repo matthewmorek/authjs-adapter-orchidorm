@@ -1,0 +1,26 @@
+{
+  "name": "@auth/orchidorm-adapter",
+  "version": "0.1.0",
+  "description": "OrchidORM adapter for Auth.js",
+  "keywords": [
+    "orchid-orm",
+    "next-auth",
+    "next.js",
+    "oauth"
+  ],
+  "author": "Matthew Morek <hi@matthewmorek.com>",
+  "license": "ISC",
+  "type": "module",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    }
+  },
+  "devDependencies": {
+    "next-auth": "^4.24.6",
+    "orchid-orm": "^1.23.4",
+    "typescript": "^5.3.3"
+  }
+}
