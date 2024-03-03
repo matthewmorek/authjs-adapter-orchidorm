@@ -23,6 +23,7 @@ export function OrchidAdapter(db: OrchidORM): Adapter {
     },
     async getUserByAccount({ provider, providerAccountId }) {
       const user = await db.user.select("*", {
+        // @ts-expect-error Orchid cannot know table schema ahead oftime
         account: (q) => q.account.join().where({ provider, providerAccountId }),
       });
       return user as unknown as AdapterUser;
@@ -63,6 +64,7 @@ export function OrchidAdapter(db: OrchidORM): Adapter {
       await db.session.findBy({ sessionToken }).delete();
     },
     async createVerificationToken(verificationToken) {
+      // @ts-expect-error Orchid cannot know payload type ahead of time
       const newVerificationToken = await db.verificationToken.create(verificationToken);
       return newVerificationToken as unknown as VerificationToken;
     },
