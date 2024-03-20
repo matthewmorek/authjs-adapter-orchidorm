@@ -15,7 +15,7 @@
     "db": "tsx src/test/dbScript.ts",
     "lint": "eslint src --ext .js,.cjs,.mjs,.ts,.cts,.mts --fix --ignore-path .gitignore",
     "format": "prettier --write src/",
-    "types": "tsx --noEmit"
+    "types": "tsc"
   },
   "license": "ISC",
   "type": "module",

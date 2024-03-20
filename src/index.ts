@@ -38,18 +38,12 @@ interface Token extends Query {
   inputType: VerificationTokenInput;
 }
 
-interface DbCommon {
+interface Db {
   $transaction(fn: () => Promise<unknown>): Promise<void>;
   user: User;
   verificationToken?: Token;
-}
-
-interface DbJwt extends DbCommon {
-  account: Account;
-}
-
-interface DbSession extends DbCommon {
-  session: Session;
+  account?: Account;
+  session?: Session;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,7 +60,7 @@ const parseUser = (user: any) => parseTime(user, "emailVerified");
 const parseSession = (user: any) => parseTime(user, "expires");
 const parseVerificationToken = parseSession;
 
-const methodsForJWT = (db: DbJwt) => ({
+const methodsForAccount = (db: { user: User; account: Account }) => ({
   async getUserByAccount({
     provider,
     providerAccountId,
@@ -97,7 +91,7 @@ const methodsForJWT = (db: DbJwt) => ({
   },
 });
 
-const methodsForSession = (db: DbSession) => ({
+const methodsForSession = (db: Db & { session: Session }) => ({
   // Is used when session strategy is jwt
   async createSession(data: SessionInput): Promise<AdapterSession> {
     const session = await db.session.create(data);
@@ -150,7 +144,7 @@ const methodsForVerificationToken = (db: { verificationToken: Token }) => ({
   },
 });
 
-export const OrchidAdapter = (db: DbJwt | DbSession) => ({
+export const OrchidAdapter = (db: Db) => ({
   async createUser(data: UserType): Promise<AdapterUser> {
     const user = await db.user.create(data);
     return parseUser(user);
@@ -178,15 +172,17 @@ export const OrchidAdapter = (db: DbJwt | DbSession) => ({
   async deleteUser(userId: string): Promise<void> {
     await db.$transaction(() =>
       Promise.all([
-        "session" in db && db.session.findByOptional({ userId }).delete(),
-        "account" in db && db.account.findByOptional({ userId }).delete(),
+        db.session && db.session.findByOptional({ userId }).delete(),
+        db.account && db.account.findByOptional({ userId }).delete(),
         db.user.findByOptional({ id: userId }).delete(),
       ]),
     );
   },
 
-  ...("account" in db ? methodsForJWT(db) : {}),
-  ...("session" in db ? methodsForSession(db) : {}),
+  ...(db.account
+    ? methodsForAccount({ user: db.user, account: db.account })
+    : {}),
+  ...(db.session ? methodsForSession({ ...db, session: db.session }) : {}),
   ...(db.verificationToken
     ? methodsForVerificationToken({ verificationToken: db.verificationToken })
     : {}),
