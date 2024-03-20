@@ -1,83 +1,193 @@
 import type {
-  Adapter,
   AdapterAccount,
   AdapterSession,
   AdapterUser,
   VerificationToken,
 } from "next-auth/adapters";
-import type { OrchidORM } from "orchid-orm";
+import { Query } from "orchid-orm";
 
-export function OrchidAdapter(db: OrchidORM): Adapter {
-  return {
-    async createUser(user) {
-      const createdUser = await db.user.create(user);
-      return createdUser as unknown as AdapterUser;
-    },
-    async getUser(id) {
-      const user = await db.user.findBy({ id });
-      return user as unknown as AdapterUser;
-    },
-    async getUserByEmail(email) {
-      const user = await db.user.findByOptional({ email });
-      return user as unknown as AdapterUser;
-    },
-    async getUserByAccount({ provider, providerAccountId }) {
-      const user = await db.user.select("*", {
-        // @ts-expect-error Orchid cannot know table schema ahead oftime
-        account: (q) => q.account.join().where({ provider, providerAccountId }),
-      });
-      return user as unknown as AdapterUser;
-    },
-    async updateUser(user) {
-      const updatedUser = await db.user.findBy({ id: user.id }).update(user).take();
-      return updatedUser as unknown as AdapterUser;
-    },
-    async deleteUser(userId) {
-      await db.session.findBy({ userId: userId }).delete();
-      await db.account.findBy({ userId: userId }).delete();
-      await db.account.findBy({ id: userId }).delete();
-    },
-    async linkAccount(account) {
-      const createdAccount = await db.account.create(account);
-      return createdAccount as unknown as AdapterAccount;
-    },
-    async unlinkAccount({ provider, providerAccountId }) {
-      await db.account.findBy({ provider, providerAccountId }).delete();
-    },
-    async createSession(session) {
-      const createdSession = await db.session.create(session);
-      return createdSession as unknown as AdapterSession;
-    },
-    async getSessionAndUser(sessionToken) {
-      const session = await db.session.findBy({ sessionToken });
-      const user = await db.user.findBy({ id: session.userId });
-      return { session, user } as unknown as {
-        session: AdapterSession;
-        user: AdapterUser;
-      };
-    },
-    async updateSession(session) {
-      const updatedSession = await db.session
-        .findBy({ sessionToken: session.sessionToken })
-        .update(session)
-        .take();
-      return updatedSession as unknown as AdapterSession;
-    },
-    async deleteSession(sessionToken) {
-      await db.session.findBy({ sessionToken }).delete();
-    },
-    async createVerificationToken(verificationToken) {
-      const newVerificationToken =
-        // @ts-expect-error Orchid cannot know payload type ahead of time
-        await db.verificationToken.create(verificationToken);
-      return newVerificationToken as unknown as VerificationToken;
-    },
-    async useVerificationToken({ identifier, token }) {
-      const verificationToken = await db.verificationToken.findByOptional({
-        identifier,
-        token,
-      });
-      return verificationToken as unknown as VerificationToken;
-    },
-  };
+type UserType = Omit<AdapterUser, "id" | "emailVerified"> & {
+  emailVerified?: Date | number | string | null;
+};
+
+interface User extends Query {
+  inputType: UserType;
 }
+
+type AccountType = Omit<AdapterAccount, "access_token"> & {
+  access_token?: string | null;
+};
+
+interface Account extends Query {
+  inputType: AccountType;
+}
+
+type SessionInput = Omit<AdapterSession, "expires"> & {
+  expires: Date | number | string;
+};
+
+interface Session extends Query {
+  inputType: SessionInput;
+}
+
+type VerificationTokenInput = Omit<VerificationToken, "expires"> & {
+  expires: Date | number | string;
+};
+
+interface Token extends Query {
+  inputType: VerificationTokenInput;
+}
+
+interface DbCommon {
+  $transaction(fn: () => Promise<unknown>): Promise<void>;
+  user: User;
+  verificationToken?: Token;
+}
+
+interface DbJwt extends DbCommon {
+  account: Account;
+}
+
+interface DbSession extends DbCommon {
+  session: Session;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const parseTime = (record: any, column: string) => {
+  if (record[column] && !(record[column] instanceof Date)) {
+    record[column] = new Date(record[column] as string);
+  }
+  return record as never;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const parseUser = (user: any) => parseTime(user, "emailVerified");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const parseSession = (user: any) => parseTime(user, "expires");
+const parseVerificationToken = parseSession;
+
+const methodsForJWT = (db: DbJwt) => ({
+  async getUserByAccount({
+    provider,
+    providerAccountId,
+  }: Pick<
+    AdapterAccount,
+    "provider" | "providerAccountId"
+  >): Promise<AdapterUser | null> {
+    const user = await db.user
+      .whereExists(
+        db.account.where({ provider, providerAccountId }),
+        "userId",
+        "id",
+      )
+      .takeOptional();
+
+    return user ? parseUser(user) : null;
+  },
+
+  async linkAccount(data: AccountType): Promise<void> {
+    await db.account.insert(data);
+  },
+
+  // This method is defined but not implemented by auth.js
+  async unlinkAccount(
+    params: Pick<AccountType, "provider" | "providerAccountId">,
+  ) {
+    await db.account.findByOptional(params).delete();
+  },
+});
+
+const methodsForSession = (db: DbSession) => ({
+  // Is used when session strategy is jwt
+  async createSession(data: SessionInput): Promise<AdapterSession> {
+    const session = await db.session.create(data);
+    return parseSession(session);
+  },
+
+  async getSessionAndUser(
+    sessionToken: string,
+  ): Promise<{ session: AdapterSession; user: AdapterUser } | null> {
+    const result = await db.session
+      .findByOptional({ sessionToken })
+      .join(db.user, "id", "userId")
+      .select("*", "user.*");
+
+    if (!result) return null;
+
+    const { user, ...session } = result;
+    return { user: parseUser(user), session: parseSession(session) } as never;
+  },
+
+  async updateSession({
+    sessionToken,
+    ...data
+  }: Partial<SessionInput> &
+    Pick<AdapterSession, "sessionToken">): Promise<undefined> {
+    await db.session.findByOptional({ sessionToken }).update(data);
+  },
+
+  async deleteSession(sessionToken: string): Promise<void> {
+    await db.session.findByOptional({ sessionToken }).delete();
+  },
+});
+
+const methodsForVerificationToken = (db: { verificationToken: Token }) => ({
+  async createVerificationToken(
+    data: VerificationTokenInput,
+  ): Promise<undefined> {
+    await db.verificationToken.insert(data);
+  },
+
+  async useVerificationToken(
+    data: Pick<VerificationToken, "identifier" | "token">,
+  ): Promise<VerificationToken | null> {
+    const token = await db.verificationToken
+      .selectAll()
+      .findByOptional(data)
+      .delete();
+
+    return token ? parseVerificationToken(token) : null;
+  },
+});
+
+export const OrchidAdapter = (db: DbJwt | DbSession) => ({
+  async createUser(data: UserType): Promise<AdapterUser> {
+    const user = await db.user.create(data);
+    return parseUser(user);
+  },
+
+  async getUser(id: string): Promise<AdapterUser | null> {
+    const user = await db.user.findByOptional({ id });
+    return user ? parseUser(user) : null;
+  },
+
+  async getUserByEmail(email: string): Promise<AdapterUser | null> {
+    const user = await db.user.findByOptional({ email });
+    return user ? parseUser(user) : null;
+  },
+
+  async updateUser({
+    id,
+    ...data
+  }: Partial<AdapterUser> & Pick<AdapterUser, "id">): Promise<AdapterUser> {
+    const user = await db.user.selectAll().findBy({ id }).update(data);
+    return parseUser(user);
+  },
+
+  // This method is defined but not implemented by auth.js
+  async deleteUser(userId: string): Promise<void> {
+    await db.$transaction(() =>
+      Promise.all([
+        "session" in db && db.session.findByOptional({ userId }).delete(),
+        "account" in db && db.account.findByOptional({ userId }).delete(),
+        db.user.findByOptional({ id: userId }).delete(),
+      ]),
+    );
+  },
+
+  ...("account" in db ? methodsForJWT(db) : {}),
+  ...("session" in db ? methodsForSession(db) : {}),
+  ...(db.verificationToken
+    ? methodsForVerificationToken({ verificationToken: db.verificationToken })
+    : {}),
+});

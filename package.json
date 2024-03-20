@@ -9,6 +9,14 @@
     "oauth"
   ],
   "author": "Matthew Morek <hi@matthewmorek.com>",
+  "scripts": {
+    "test": "jest --watch --verbose false",
+    "check": "jest",
+    "db": "tsx src/test/dbScript.ts",
+    "lint": "eslint src --ext .js,.cjs,.mjs,.ts,.cts,.mts --fix --ignore-path .gitignore",
+    "format": "prettier --write src/",
+    "types": "tsx --noEmit"
+  },
   "license": "ISC",
   "type": "module",
   "types": "./index.d.ts",
@@ -18,9 +26,32 @@
       "import": "./index.js"
     }
   },
+  "jest": {
+    "rootDir": "src",
+    "setupFiles": [
+      "dotenv/config"
+    ],
+    "transform": {
+      "^.+\\.ts$": "@swc/jest"
+    }
+  },
   "devDependencies": {
+    "@swc/jest": "^0.2.36",
+    "@types/jest": "^29.5.12",
+    "dotenv": "^16.4.5",
+    "jest": "^29.7.0",
     "next-auth": "^4.24.6",
-    "orchid-orm": "^1.23.4",
-    "typescript": "^5.3.3"
+    "orchid-orm": "^1.23.10",
+    "orchid-orm-schema-to-zod": "^0.6.10",
+    "orchid-orm-test-factory": "^0.5.10",
+    "rake-db": "^2.15.8",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3",
+    "zod": "^3.22.4",
+    "@typescript-eslint/eslint-plugin": "^7.3.1",
+    "@typescript-eslint/parser": "^7.3.1",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.3"
   }
 }
